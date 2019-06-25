@@ -80,6 +80,26 @@ for i, data in enumerate([flow_q05, flow_q95]):
 
 flow_hilo = out[0].join(out[1])
 
+# Get data to fit model to
+flow_norm = (
+    normalise_data_by_month(flow)
+    .rename(columns={'flow':'flow_norm'})
+    .resample('MS')
+    .mean()
+)
+
+flow_monthly = (
+    flow
+    .resample('MS')
+    .mean()
+)
+flow_std = (
+    flow
+    .rename(columns={'flow':'flow_std'})
+    .resample('MS')
+    .std()
+)
+out_df = flow_monthly.join(flow_std).join(indices)
 
 # --------------------------------------------------
 # Plot correlations
@@ -123,51 +143,64 @@ def _pearson_r(x,y):
     return stats.pearsonr(x, y)[0]
 
 
-for hilo_flow in ['q05', 'q95']:
+def correlate_indices_hiloflow(df, title=None):
+    assert all(np.isin(['q05', 'q95'], df.columns))
 
-    fig, axs = plt.subplots(
-        len(indices.columns), 4, figsize=(10,20),
-        sharey=True
-    )
+    for hilo_flow in ['q05', 'q95']:
 
-    for i, season in enumerate(np.unique(df.index.month.values)):
-        for j, index in enumerate(df.iloc[:,3:].columns):
-            s_data = df.loc[df.index.month == season]
-            ax = axs[j, i]
-            r_value = _pearson_r(s_data[index], s_data[hilo_flow])
-            color = sns.color_palette()[0] if abs(r_value) > 0.1 else "#95a5a6"
+        fig, axs = plt.subplots(
+            len(indices.columns), 4, figsize=(10,20),
+            sharey=True
+        )
 
-            sns.regplot(
-                x=index, y=hilo_flow, data=s_data, ax=ax,
-                color=color
-            )
+        for i, season in enumerate(np.unique(df.index.month.values)):
+            for j, index in enumerate(df.iloc[:,3:].columns):
+                s_data = df.loc[df.index.month == season]
+                ax = axs[j, i]
+                r_value = _pearson_r(s_data[index], s_data[hilo_flow])
+                color = sns.color_palette()[0] if abs(r_value) > 0.1 else "#95a5a6"
 
-            r = f"{r_value:.2f}"
-            r_dict[season].append(r_value)
+                sns.regplot(
+                    x=index, y=hilo_flow, data=s_data, ax=ax,
+                    color=color
+                )
 
-            if j == 0:
-                ax.set_title(f'{season_lookup[season]} - {r}')
-            else:
-                ax.set_title(f'{r}')
-            if i ==0:
-                ax.set_ylabel(f'{index.upper()}')
-            else:
-                ax.set_ylabel('')
-            ax.set_xlabel('')
-            ax.set_xticklabels('')
-            ax.set_yticklabels('')
-    fig.suptitle(f'Indices Correlations with Mean Seasonal {hilo_flow} Thames Flow')
-    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-    fig.savefig(f'index_thames_correlation_{hilo_flow}.png')
+                r = f"{r_value:.2f}"
+                r_dict[season].append(r_value)
+
+                if j == 0:
+                    ax.set_title(f'{season_lookup[season]} - {r}')
+                else:
+                    ax.set_title(f'{r}')
+                if i ==0:
+                    ax.set_ylabel(f'{index.upper()}')
+                else:
+                    ax.set_ylabel('')
+                ax.set_xlabel('')
+                ax.set_xticklabels('')
+                ax.set_yticklabels('')
+        if title is not None:
+            fig.suptitle(f'Indices Correlations with Mean Seasonal {hilo_flow} Thames Flow')
+        else:
+            fig.suptitle(f'Indices Correlations with Mean Seasonal {hilo_flow} Thames Flow {title}')
+        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+        fig.savefig(f'index_thames_correlation_{hilo_flow}_{title}.png')
+        plt.show()
 
 
-
+correlate_indices_hiloflow(df)
 r_df = pd.DataFrame(r_dict)
 
 # ideas:
-# look at high vs. low flow
 # look at lagged predictability (shift by one season) vs. concurrency
 
+
+# -----------------------------------------------------------------------------
+# look at lagged correlations
+# -----------------------------------------------------------------------------
+df = df.sort_index()
+lag1 = df.loc[:, ['q95', 'q05']].join(df.iloc[:, 3:].shift(1))
+correlate_indices_hiloflow(lag1, title='Lag1')
 # -----------------------------------------------------------------------------
 # plot a hydrograph of the thames
 # http://pyhyd.blogspot.com/2017/11/matplotlib-template-for-precipitation.html
@@ -176,7 +209,11 @@ r_df = pd.DataFrame(r_dict)
 # convert to xarray
 ds = flow.to_xarray()
 f_med = (
-    ds.groupby('date.month').median().rename({'flow': 'flow_median'}).to_dataframe()
+    ds
+    .groupby('date.month')
+    .median()
+    .rename({'flow': 'flow_median'})
+    .to_dataframe()
 )
 f_95 = (
     ds

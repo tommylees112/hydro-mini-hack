@@ -7,7 +7,6 @@ import numpy as np
 import scipy.stats as stats
 import xarray as xr
 
-#timo was here
 data_dir = Path('/Users/tommylees/Downloads')
 
 # -------------------------------------------------------
